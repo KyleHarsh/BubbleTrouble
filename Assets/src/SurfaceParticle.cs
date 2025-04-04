@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using UnityEngine;
 
-public class SurfaceParticle : MonoBehaviour
+public class SurfaceParticle
 {
 
     public SurfaceParticle(UnityEngine.Vector3 p, UnityEngine.Vector3 v, UnityEngine.Vector3 a, float m = 0.001f)
@@ -26,12 +26,6 @@ public class SurfaceParticle : MonoBehaviour
         acceleration += f * this.mass;
     }
 
-    // Start is called before the first frame update
-    void Start()
-    {
-        
-    }
-
     // Update is called once per frame
     void Update()
     {
@@ -45,7 +39,7 @@ public class SurfaceParticle : MonoBehaviour
             UnityEngine.Vector3 direction = (neigbors[i].position - this.position).normalized;
             acceleration -= k * ((neigbors[i].position - this.position).magnitude - partDist) * direction;
         }
-        acceleration -= acceleration * damping * Time.deltaTime;
+        acceleration -= damping * Time.deltaTime * velocity;
     }
 
     private static readonly float k = 0.1f;
