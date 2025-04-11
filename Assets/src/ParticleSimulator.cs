@@ -2,7 +2,9 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.UIElements;
 using static UnityEngine.ParticleSystem;
 
 public class ParticleSimulator : MonoBehaviour
@@ -12,6 +14,10 @@ public class ParticleSimulator : MonoBehaviour
     private SpatialHashGrid neighborGrid;
     public float gridCellSize = 2.0f;
     public BubbleParticleSpawner spawner;
+
+    public Transform cameraTransform;
+    public Transform mouseScreenTransform;
+
     private bool spawned = false;
 
     public Mesh particleMesh;
@@ -29,10 +35,22 @@ public class ParticleSimulator : MonoBehaviour
     private int lastSpringUpdateFrame = -1; // to limit updates to once per frame
     public float springUpdateThreshold = 0.1f; // minimum movement needed to recheck springs
 
+    private List<Matrix4x4> transformMatrices = new List<Matrix4x4>();
+
+    public float gravityForce = 9.8f;
+    public float particleMass;
+
+    private float distanceToCamera;
+    // Define a radius for influence.
+    public float mouseDragRadius = 1.0f;
+    public float mouseDragStrength = 1.0f;
+
+    public float dragCoefficient = 0.1f; // Tweak this parameter
 
     private void Start()
     {
         neighborGrid = new SpatialHashGrid(gridCellSize);
+        distanceToCamera = Mathf.Abs(cameraTransform.position.z - mouseScreenTransform.position.z);
     }
 
     private void UpdateGrid()
@@ -56,6 +74,7 @@ public class ParticleSimulator : MonoBehaviour
         if (internalParticles != null) internalParticles.Clear();
         internalParticles = spawner.SpawnInternalParticles();
         UpdateGrid();
+
     }
 
 
@@ -86,12 +105,31 @@ public class ParticleSimulator : MonoBehaviour
             }
 
             { // SPH fluid simulation using substeps
-                float deltaTime = Time.deltaTime;
                 int substeps = 4;
-                float subDeltaTime = deltaTime / substeps;
+                float subDeltaTime = Time.deltaTime / substeps;
 
                 for (int step = 0; step < substeps; step++)
                 {
+                    // 1.Prediction Phase: Apply External Forces and Predict New Positions.
+                    // ---------------------------
+                    // Save the current position as the old position for velocity update later.
+                    for (int i = 0; i < internalParticles.Count; i++)
+                    {
+                        internalParticles[i].previousPosition = internalParticles[i].position;
+                    }
+
+                    // Apply external forces such as gravity to update velocity.
+                    // (Here, gravityForce is assumed to be a vector; adjust if it's a scalar.)
+                    for (int i = 0; i < internalParticles.Count; i++)
+                    {
+                        InternalParticle p = internalParticles[i];
+                        // For example, adding gravity: p.velocity += gravityForce * subDeltaTime;
+                        // You can also include any other external force here.
+                        p.velocity += Vector3.down*gravityForce * subDeltaTime;
+                        // Predict new positions by simple explicit integration:
+                        p.position += p.velocity * subDeltaTime;
+                    }
+
                     // Cache neighbor lists for all particles in this substep.
                     List<int>[] cachedNeighbors = new List<int>[internalParticles.Count];
                     for (int i = 0; i < internalParticles.Count; i++)
@@ -127,6 +165,13 @@ public class ParticleSimulator : MonoBehaviour
                     {
                         AdjustSpring(internalSprings[i], subDeltaTime);
                     }
+
+                    // Now update each particle's velocity based on its net displacement in this substep.
+                    for (int i = 0; i < internalParticles.Count; i++)
+                    {
+                        InternalParticle p = internalParticles[i];
+                        p.velocity = (p.position - p.previousPosition) / subDeltaTime;
+                    }
                 }
 
                 for (int i = 0; i < internalParticles.Count; i++)
@@ -138,10 +183,15 @@ public class ParticleSimulator : MonoBehaviour
                     }
                 }
 
+
                 // update the particle grid with the new positions
                 UpdateGrid();
 
                 UpdateSpringNetwork();
+
+                ApplyMouseDragForce(Time.deltaTime);
+
+                //ApplyAirResistance(Time.deltaTime);
             }
             
         }
@@ -289,4 +339,57 @@ public class ParticleSimulator : MonoBehaviour
 
     #endregion
 
+    #region External Forces
+
+    private void ApplyAirResistance(float dt)
+    {
+        foreach (InternalParticle p in internalParticles)
+        {
+            // Reduces the velocity proportionally to the current value.
+            p.velocity *= (1.0f - dragCoefficient * dt);
+        }
+    }
+
+    void ApplyMouseDragForce(float deltaTime)
+    {
+        if (Input.GetMouseButton(0))
+        {  // If the mouse button is pressed
+            Debug.Log("dragging");
+           // Convert the mouse position into a world coordinate.
+            Vector3 mouseScreenPos = Input.mousePosition;
+            mouseScreenPos.z = distanceToCamera;  // Set appropriate depth.
+            Vector3 mouseWorldPos = Camera.main.ScreenToWorldPoint(mouseScreenPos); 
+
+            // Iterate over all particles.
+            foreach (var particle in internalParticles)
+            {
+                float distance = Vector3.Distance(particle.position, mouseWorldPos);
+                if (distance < mouseDragRadius)
+                {
+                    // Compute a simple drag force.
+                    Vector3 force = mouseDragStrength * (mouseWorldPos - particle.position);
+                    // You can either add this force to the particle’s velocity or adjust its position directly.
+                    particle.position += force * deltaTime * deltaTime;
+                }
+
+            }
+        }
+    }
+    #endregion
+
+    private void OnDrawGizmos()
+    {
+        if (Input.GetMouseButton(0))
+        {
+            // Convert the mouse position into a world coordinate.
+            Vector3 mouseScreenPos = Input.mousePosition;
+            mouseScreenPos.z = distanceToCamera;  // Set appropriate depth.
+            Vector3 mouseWorldPos = Camera.main.ScreenToWorldPoint(mouseScreenPos);
+
+            Gizmos.color = Color.cyan.WithAlpha(0.5f);
+            Gizmos.DrawSphere(mouseWorldPos, mouseDragRadius);
+        }
+    }
 }
+
+
