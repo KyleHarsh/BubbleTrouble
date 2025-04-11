@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Numerics;
+using Unity.VisualScripting;
 using UnityEngine;
 
 public class SurfaceParticle
@@ -24,6 +25,16 @@ public class SurfaceParticle
     public void externalForce(UnityEngine.Vector3 f)
     {
         acceleration += f * this.mass;
+    }
+
+    public static bool operator ==(SurfaceParticle a, SurfaceParticle b)
+    {
+        return a.position == b.position;
+    }
+
+    public static bool operator !=(SurfaceParticle a, SurfaceParticle b)
+    {
+        return !(a == b);
     }
 
     // Update is called once per frame
