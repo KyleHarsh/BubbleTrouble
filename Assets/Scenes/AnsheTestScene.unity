@@ -132,6 +132,7 @@ GameObject:
   m_Component:
   - component: {fileID: 131995}
   - component: {fileID: 131994}
+  - component: {fileID: 131996}
   m_Layer: 0
   m_Name: InternalSimulator
   m_TagString: Untagged
@@ -146,7 +147,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 131993}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 64abaa355daf0ef44813b15f09fce2eb, type: 3}
   m_Name: 
@@ -183,8 +184,40 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 0}
+  m_Father: {fileID: 1543787782}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &131996
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 131993}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: aaff2562804895640acbe8e7ddd0528b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  gridCellSize: 2
+  spawner: {fileID: 1875805670}
+  cameraTransform: {fileID: 1451789625}
+  mouseScreenTransform: {fileID: 911786089}
+  k_p: 0.01
+  k_p2: 0.02
+  n0: 12
+  influenceRadius: 0
+  springStiffness: 2
+  plasticity: 0.3
+  yieldRatio: 0.1
+  springUpdateThreshold: 0.1
+  particleMesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
+  particleMaterial: {fileID: 2100000, guid: 0bfc57d85b5db67488db26fdbca25c7e, type: 2}
+  particleRenderRadius: 0.1
+  gravityForce: 0
+  particleMass: 0
+  mouseDragRadius: 1
+  mouseDragStrength: 2
+  dragCoefficient: 0.4
 --- !u!1 &265691553
 GameObject:
   m_ObjectHideFlags: 0
@@ -337,7 +370,7 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1543787782}
+  m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &618132242
 MonoBehaviour:
@@ -619,7 +652,7 @@ RectTransform:
   - {fileID: 1792066401}
   - {fileID: 1896145188}
   - {fileID: 265691554}
-  m_Father: {fileID: 1543787782}
+  m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
@@ -1406,7 +1439,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1543787782}
   m_Layer: 0
-  m_Name: ParticleSpawnerSetup
+  m_Name: BubbleInternal
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1426,8 +1459,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1875805671}
-  - {fileID: 1015629453}
-  - {fileID: 618132241}
+  - {fileID: 131995}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1625206440
@@ -1641,9 +1673,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   spawnCenter: {fileID: 1875805671}
   typeToSpawn: 1
-  numParticlesToSpawn: 200
-  minParticleDensity: 0.9
-  bubbleRadius: 1
+  numParticlesToSpawn: 300
+  minParticleDensity: 0.5
+  bubbleRadius: 1.5
 --- !u!4 &1875805671
 Transform:
   m_ObjectHideFlags: 0
@@ -2015,8 +2047,9 @@ SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
   - {fileID: 1451789625}
-  - {fileID: 131995}
   - {fileID: 1543787782}
+  - {fileID: 1015629453}
+  - {fileID: 618132241}
   - {fileID: 1344706647}
   - {fileID: 2019785071}
   - {fileID: 911786089}

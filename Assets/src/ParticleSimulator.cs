@@ -4,8 +4,9 @@ using System.Collections.Generic;
 using System.Linq;
 using Unity.VisualScripting;
 using UnityEngine;
-using UnityEngine.UIElements;
-using static UnityEngine.ParticleSystem;
+using Unity.Burst;
+using Unity.Jobs;
+using Unity.Mathematics;
 
 public class ParticleSimulator : MonoBehaviour
 {
@@ -80,10 +81,6 @@ public class ParticleSimulator : MonoBehaviour
 
     private void Update()
     {
-        if(Input.GetKeyDown(KeyCode.Return))
-        {
-            SpawnInternalParticles();
-        }
 
         if(internalParticles != null)
         {
@@ -250,7 +247,8 @@ public class ParticleSimulator : MonoBehaviour
     #region Spring Forces
     private bool SpringExists(int indexA, int indexB)
     {
-        return internalSprings.Find(s => (s.particleA == indexA && s.particleB == indexB) || (s.particleA == indexB && s.particleB == indexA)) != null;
+        return false;
+        //return internalSprings.Find(s => (s.particleA == indexA && s.particleB == indexB) || (s.particleA == indexB && s.particleB == indexA)) != null;
     }
 
     private void TryAddSpring(int indexA, int indexB)
