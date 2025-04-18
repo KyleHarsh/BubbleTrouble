@@ -1,6 +1,10 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Numerics;
+using System.Drawing;
+using System.Linq;
+using Unity.VisualScripting;
+using UnityEditor.PackageManager;
 using UnityEngine;
 
 public class Bubble_m : MonoBehaviour
@@ -9,16 +13,129 @@ public class Bubble_m : MonoBehaviour
 
     private MeshFilter meshF;
     private List<SurfaceParticle> surfaceParticles;
+    private int numTries;
 
-    private UnityEngine.Vector3 initialVelocity = UnityEngine.Vector3.zero;
-    private UnityEngine.Vector3 initialAcceleration = UnityEngine.Vector3.zero;
+    public int numSimsPerFrame = 3;
+    public float springConst = 0.1f;
+    public float damping = 0.5f;
+
+    public Camera cam;
+    public float clickRadius = 2.5f;
+    public float clickStrength = 0.2f;
+
+    private bool flag = false;
+
+    private Vector3 initialVelocity = Vector3.zero;
+    private Vector3 initialAcceleration = Vector3.zero;
     void Start()
     {
         meshF = GetComponent<MeshFilter>();
         LazySquirrelLabs.SphereGenerator.Generators.IcosphereGenerator gen = new LazySquirrelLabs.SphereGenerator.Generators.IcosphereGenerator(1.0f, 3);
         this.meshF.mesh = gen.Generate();
+        this.surfaceParticles = new List<SurfaceParticle>();
+        removeDuplicateVerticies();
         meshToBubble();
+        numTries = this.meshF.mesh.triangles.Length;
     }
+    void Update()
+    {
+        
+        for (int i = 0; i < numSimsPerFrame; ++i)
+        {
+            runSim();
+        }
+
+
+        bubbleToMesh();
+        CheckMouseClick();
+
+    }
+
+    #region mouse
+    void CheckMouseClick()
+    {
+        if (Input.GetMouseButton(0))
+        {  // If the mouse button is pressed
+            Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+            //for each particle
+            for (int i = 0; i < surfaceParticles.Count; ++i)
+            {
+                //if the particle is close to the ray cast by the mouse, give it a push in that direction
+                float dist = Vector3.Cross(ray.direction, surfaceParticles[i].getPosition() - ray.origin).magnitude;
+                if (dist <= clickRadius)
+                {
+                    surfaceParticles[i].applyForce(ray.direction*clickStrength);
+                }
+            }
+        }
+    }
+
+    #endregion
+    #region sim
+    private Vector3 forceOnParticle(int i)
+    {
+        List<int> neighbors = this.surfaceParticles[i].getNeigbors();
+        List<float> springDists = this.surfaceParticles[i].getDists();
+        Vector3 force = Vector3.zero;
+        for (int j = 0; j < neighbors.Count; ++j)
+        {
+            Vector3 diff = surfaceParticles[neighbors[j]].getPosition() - surfaceParticles[i].getPosition();
+            Vector3 dir = Vector3.Normalize(diff);
+            float dist = diff.magnitude;
+            force += -1 * springConst * (springDists[j] -dist) * 0.5f * dir;
+        }
+        return force;
+    }
+    private void runSim()
+    {
+        for (int i = 0; i < surfaceParticles.Count; i++)
+        {
+            surfaceParticles[i].applyForce(forceOnParticle(i));
+            surfaceParticles[i].update(Time.deltaTime/numSimsPerFrame, damping);
+        }
+    }
+    #endregion
+    #region dupicates
+    
+    private void removeDuplicateVerticies()
+    {
+        Dictionary<Vector3, int> duplicates = new Dictionary<Vector3, int>();
+        Vector3[] verts = meshF.mesh.vertices;
+        for (int i = 0; i < verts.Length; i++)
+        {
+            if (!duplicates.ContainsKey(verts[i]))
+            {
+                duplicates[verts[i]] = -1;
+
+            } else
+            {
+                //Debug.Log(string.Format("DUPLICATE FOUND: {0}", verts[i].ToString()));
+            }
+        }
+
+        //makes the duplicates int it's new place
+        Vector3[] unDupedVerts = duplicates.Keys.ToArray();
+        for (int i = 0;i < unDupedVerts.Length; i++)
+        {
+            duplicates[unDupedVerts[i]] = i;
+        }
+
+        int[] tries = this.meshF.mesh.triangles;
+        int[] unDupedTries = new int[tries.Length];
+        for (int i = 0; i < tries.Length; i++)
+        {
+            unDupedTries[i] = duplicates[verts[tries[i]]];
+        }
+        this.meshF.mesh.triangles = unDupedTries;
+        this.meshF.mesh.vertices = unDupedVerts;
+        //Debug.Log(string.Join(", ", unDupedVerts));
+        //Debug.Log(string.Format("Verticies length before: {0}", verts.Length));
+        //Debug.Log(string.Format("Verticies length: {0}", unDupedVerts.Length));
+        //Debug.Log(string.Format("Max index in tries: {0}", Enumerable.Max(unDupedTries)));
+        //Debug.Log(string.Join(", ", unDupedTries));
+    }
+    #endregion
+    #region construction
 
     void meshToBubble()
     {
@@ -27,51 +144,60 @@ public class Bubble_m : MonoBehaviour
             surfaceParticles.Clear();
         }
         int[] tries = meshF.mesh.triangles;
-        UnityEngine.Vector3[] verts = meshF.mesh.vertices;
+        Vector3[] verts = meshF.mesh.vertices;
 
-        Dictionary<int, int> partIndicies = new Dictionary<int, int>();
-        //I am assuming we are using world coordinates
+        //I am assuming we are using object coordinates
+        for (int i  = 0; i < verts.Length; ++i)
+        {
+            surfaceParticles.Add(new SurfaceParticle(verts[i], i));
+        }
+        //do neigbors
         for (int i = 0; i < tries.Length; i += 3)
         {
-            UnityEngine.Vector3 pos1 = transform.TransformPoint(verts[tries[i]]);
-            UnityEngine.Vector3 pos2 = transform.TransformPoint(verts[tries[i+1]]);
-            UnityEngine.Vector3 pos3 = transform.TransformPoint(verts[tries[i+2]]);
+            float dist01 = Math.Abs((surfaceParticles[tries[i]].getPosition() - surfaceParticles[tries[i+1]].getPosition()).magnitude);
+            float dist12 = Math.Abs((surfaceParticles[tries[i+1]].getPosition() - surfaceParticles[tries[i + 2]].getPosition()).magnitude);
+            float dist02 = Math.Abs((surfaceParticles[tries[i]].getPosition() - surfaceParticles[tries[i + 2]].getPosition()).magnitude);
 
-            int part1;
-            int part2;
-            int part3;
+            //only one of the verticies knows about the triangle so that we don't have duplicate triangles on mesh construction
+            surfaceParticles[tries[i]].addNeighbor(tries[i + 1], dist01, tries[i + 2]);
+            surfaceParticles[tries[i]].addNeighbor(tries[i + 2], dist02);
 
-            if (!partIndicies.ContainsKey(tries[i]))
-            {
-                surfaceParticles.Add(new SurfaceParticle(pos1, initialVelocity, initialAcceleration));
-                partIndicies.Add(tries[i], surfaceParticles.Count - 1);
-            }
-            part1 = partIndicies[tries[i]];
-            if (!partIndicies.ContainsKey(tries[i+1]))
-            {
-                surfaceParticles.Add(new SurfaceParticle(pos2, initialVelocity, initialAcceleration));
-                partIndicies.Add(tries[i+1], surfaceParticles.Count - 1);
-            }
-            part2 = partIndicies[tries[i+1]];
-            if (!partIndicies.ContainsKey(tries[i+2]))
-            {
-                surfaceParticles.Add(new SurfaceParticle(pos3, initialVelocity, initialAcceleration));
-                partIndicies.Add(tries[i+2], surfaceParticles.Count - 1);
-            }
-            part3 = partIndicies[tries[i+2]];
+            surfaceParticles[tries[i + 1]].addNeighbor(tries[i], dist01);
+            surfaceParticles[tries[i + 1]].addNeighbor(tries[i + 2], dist12);
 
-            surfaceParticles[part1].addNeighbor(surfaceParticles[part2]);
-            surfaceParticles[part1].addNeighbor(surfaceParticles[part3]);
-
-            surfaceParticles[part2].addNeighbor(surfaceParticles[part1]);
-            surfaceParticles[part2].addNeighbor(surfaceParticles[part3]);
-
-            surfaceParticles[part3].addNeighbor(surfaceParticles[part1]);
-            surfaceParticles[part3].addNeighbor(surfaceParticles[part2]);
+            surfaceParticles[tries[i + 2]].addNeighbor(tries[i], dist02);
+            surfaceParticles[tries[i + 2]].addNeighbor(tries[i + 1], dist12);
         }
     }
     void bubbleToMesh()
     {
+        Vector3[] verts = new Vector3[this.surfaceParticles.Count];
+        for (int i = 0; i < this.surfaceParticles.Count; ++i)
+        {
+            verts[i] = (this.surfaceParticles[i].getPosition());
+        }
 
+        int[] tries = new int[this.numTries];
+
+        int t = 0;
+
+        for (int i = 0; i < this.surfaceParticles.Count; ++i)
+        {
+            List<(int, int)> iTr = this.surfaceParticles[i].getTries();
+            for (int j = 0; j < iTr.Count; ++j)
+            {
+                if (t > this.numTries - 3)
+                {
+                    print("MESH CONSTRUCTION ERROR: too many trinagles");
+                }
+                tries[t] = i;
+                tries[t + 1] = iTr[j].Item1;
+                tries[t + 2] = iTr[j].Item2;
+                t+=3;
+            }
+        }
+        this.meshF.mesh.vertices = verts;
+        this.meshF.mesh.triangles = tries;
     }
+    #endregion
 }
