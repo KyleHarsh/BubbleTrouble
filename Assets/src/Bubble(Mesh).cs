@@ -17,11 +17,11 @@ public class Bubble_m : MonoBehaviour
 
     public int numSimsPerFrame = 3;
     public float springConst = 0.1f;
-    public float damping = 0.5f;
+    public float damping = 0.01f;
 
     public Camera cam;
-    public float clickRadius = 2.5f;
-    public float clickStrength = 0.2f;
+    public float clickRadius = 0.7f;
+    public float clickStrength = 10.5f;
 
     private bool flag = false;
 
@@ -30,8 +30,10 @@ public class Bubble_m : MonoBehaviour
     void Start()
     {
         meshF = GetComponent<MeshFilter>();
-        LazySquirrelLabs.SphereGenerator.Generators.IcosphereGenerator gen = new LazySquirrelLabs.SphereGenerator.Generators.IcosphereGenerator(1.0f, 3);
-        this.meshF.mesh = gen.Generate();
+        //LazySquirrelLabs.SphereGenerator.Generators.IcosphereGenerator gen = new LazySquirrelLabs.SphereGenerator.Generators.IcosphereGenerator(1.0f, 1);
+        //this.meshF.mesh = gen.Generate();
+        SphereGenerator sphereGenerator = new SphereGenerator();
+        this.meshF.mesh = sphereGenerator.Create(3);
         this.surfaceParticles = new List<SurfaceParticle>();
         removeDuplicateVerticies();
         meshToBubble();
@@ -56,6 +58,7 @@ public class Bubble_m : MonoBehaviour
     {
         if (Input.GetMouseButton(0))
         {  // If the mouse button is pressed
+            Debug.Log("Mouse Clicked");
             Ray ray = cam.ScreenPointToRay(Input.mousePosition);
             //for each particle
             for (int i = 0; i < surfaceParticles.Count; ++i)
@@ -128,8 +131,8 @@ public class Bubble_m : MonoBehaviour
         }
         this.meshF.mesh.triangles = unDupedTries;
         this.meshF.mesh.vertices = unDupedVerts;
-        //Debug.Log(string.Join(", ", unDupedVerts));
-        //Debug.Log(string.Format("Verticies length before: {0}", verts.Length));
+        Debug.Log(string.Join(", ", unDupedVerts));
+        Debug.Log(string.Format("Verticies removed: {0}", verts.Length - unDupedVerts.Length));
         //Debug.Log(string.Format("Verticies length: {0}", unDupedVerts.Length));
         //Debug.Log(string.Format("Max index in tries: {0}", Enumerable.Max(unDupedTries)));
         //Debug.Log(string.Join(", ", unDupedTries));

@@ -69,7 +69,7 @@ public class SurfaceParticle
     {
         this.position += this.velocity * dt;
         this.velocity += this.acceleration * dt;
-        this.acceleration -= this.acceleration * dt * damping;
+        this.acceleration -= this.acceleration * damping;
     }
 
     //representation:

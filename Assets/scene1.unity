@@ -153,12 +153,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 61ee54fb9d0e87a46b089a8317fa8a64, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  numSimsPerFrame: 3
+  numSimsPerFrame: 10
   springConst: 0.1
-  damping: 0.1
+  damping: 0.01
   cam: {fileID: 650003206}
   clickRadius: 2.5
-  clickStrength: 0.2
+  clickStrength: 10
 --- !u!4 &401640098
 Transform:
   m_ObjectHideFlags: 0
