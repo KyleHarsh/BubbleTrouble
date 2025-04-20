@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 public class SphereGenerator
 {
@@ -24,15 +25,15 @@ public class SphereGenerator
     private List<Vector3> positions;
 
     // add vertex to mesh, fix position to be on unit sphere, return index
-    private int addVertex(Vector3 p)
+    private int addVertex(Vector3 p, float r)
     {
         float length = (float)Math.Sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
-        this.positions.Add(new Vector3(p.x / length, p.y / length, p.z / length));
+        this.positions.Add(new Vector3(p.x*r / length, p.y*r / length, p.z*r / length));
         return index++;
     }
 
     // return index of point in the middle of p1 and p2
-    private int getMiddlePoint(int p1, int p2)
+    private int getMiddlePoint(int p1, int p2, float r)
     {
         // first check if we have it already
         bool firstIsSmaller = p1 < p2;
@@ -55,14 +56,14 @@ public class SphereGenerator
             (float)((point1.z + point2.z) / 2.0));
 
         // add vertex makes sure point is on unit sphere
-        int i = addVertex(middle);
+        int i = addVertex(middle, r);
 
         // store it, return index
         this.middlePointIndexCache.Add(key, i);
         return i;
     }
 
-    public Mesh Create(int recursionLevel)
+    public Mesh Create(float radius, int recursionLevel)
     {
         Mesh mesh = new Mesh();
         this.middlePointIndexCache = new Dictionary<long, int>();
@@ -73,20 +74,20 @@ public class SphereGenerator
         // create 12 vertices of a icosahedron
         float t = (float)((1.0 + Math.Sqrt(5.0)) / 2.0);
 
-        addVertex(new Vector3(-1, t, 0));
-        addVertex(new Vector3(1, t, 0));
-        addVertex(new Vector3(-1, -t, 0));
-        addVertex(new Vector3(1, -t, 0));
+        addVertex(new Vector3(-1, t, 0), radius);
+        addVertex(new Vector3(1, t, 0), radius);
+        addVertex(new Vector3(-1, -t, 0), radius);
+        addVertex(new Vector3(1, -t, 0), radius);
 
-        addVertex(new Vector3(0, -1, t));
-        addVertex(new Vector3(0, 1, t));
-        addVertex(new Vector3(0, -1, -t));
-        addVertex(new Vector3(0, 1, -t));
+        addVertex(new Vector3(0, -1, t), radius);
+        addVertex(new Vector3(0, 1, t), radius);
+        addVertex(new Vector3(0, -1, -t), radius);
+        addVertex(new Vector3(0, 1, -t), radius);
 
-        addVertex(new Vector3(t, 0, -1));
-        addVertex(new Vector3(t, 0, 1));
-        addVertex(new Vector3(-t, 0, -1));
-        addVertex(new Vector3(-t, 0, 1));
+        addVertex(new Vector3(t, 0, -1), radius);
+        addVertex(new Vector3(t, 0, 1), radius);
+        addVertex(new Vector3(-t, 0, -1), radius);
+        addVertex(new Vector3(-t, 0, 1), radius);
 
 
         // create 20 triangles of the icosahedron
@@ -128,9 +129,9 @@ public class SphereGenerator
             foreach (var tri in faces)
             {
                 // replace triangle by 4 triangles
-                int a = getMiddlePoint(tri.v1, tri.v2);
-                int b = getMiddlePoint(tri.v2, tri.v3);
-                int c = getMiddlePoint(tri.v3, tri.v1);
+                int a = getMiddlePoint(tri.v1, tri.v2, radius);
+                int b = getMiddlePoint(tri.v2, tri.v3, radius);
+                int c = getMiddlePoint(tri.v3, tri.v1, radius);
 
                 faces2.Add(new TriangleIndices(tri.v1, a, c));
                 faces2.Add(new TriangleIndices(tri.v2, b, a));

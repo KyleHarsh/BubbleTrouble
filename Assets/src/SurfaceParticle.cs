@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using Unity.VisualScripting;
 using UnityEngine;
 
-public class SurfaceParticle
+public class SurfaceParticle : InternalParticle
 {
 
-    public SurfaceParticle(Vector3 p, Vector3 v, Vector3 a, int id_, float m = 0.001f)
+    public SurfaceParticle(Vector3 p, Vector3 v, Vector3 a, int id_, float m = 0.001f) : base(0.0f, p, v, 0.0f)
     {
         this.position = p;
         this.velocity = v;
@@ -16,7 +16,7 @@ public class SurfaceParticle
         this.distances = new List<float> ();
         this.id = id_;
     }
-    public SurfaceParticle(Vector3 p, int id_, float m = 0.001f)
+    public SurfaceParticle(Vector3 p, int id_, float m = 0.001f) : base(0.0f, p, Vector3.zero, 0.0f)
     {
         this.position = p;
         this.velocity = Vector3.zero;
@@ -74,8 +74,6 @@ public class SurfaceParticle
 
     //representation:
     float mass;
-    Vector3 position;
-    Vector3 velocity;
     Vector3 acceleration;
 
     //ID is the index in the array it is stored in
