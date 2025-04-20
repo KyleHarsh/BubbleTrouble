@@ -180,7 +180,7 @@ Transform:
   m_GameObject: {fileID: 131993}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -5.7386847, y: 0.94787216, z: 0.2959633}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -202,11 +202,11 @@ MonoBehaviour:
   spawner: {fileID: 1875805670}
   cameraTransform: {fileID: 1451789625}
   mouseScreenTransform: {fileID: 911786089}
-  k_p: 0.01
-  k_p2: 0.02
+  k_p: 0.004
+  k_p2: 0.01
   n0: 12
   influenceRadius: 0
-  springStiffness: 2
+  springStiffness: 0.6
   plasticity: 0.3
   yieldRatio: 0.1
   springUpdateThreshold: 0.1
@@ -215,9 +215,12 @@ MonoBehaviour:
   particleRenderRadius: 0.1
   gravityForce: 0
   particleMass: 0
-  mouseDragRadius: 1
+  mouseDragRadius: 3
   mouseDragStrength: 2
   dragCoefficient: 0.4
+  windDirection: {x: 0, y: 0, z: 0}
+  windForce: 0
+  bubbleSurface: {fileID: 828072073}
 --- !u!1 &265691553
 GameObject:
   m_ObjectHideFlags: 0
@@ -407,6 +410,108 @@ MonoBehaviour:
   m_FirstSelected: {fileID: 0}
   m_sendNavigationEvents: 1
   m_DragThreshold: 10
+--- !u!1 &828072070
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 828072074}
+  - component: {fileID: 828072073}
+  - component: {fileID: 828072072}
+  - component: {fileID: 828072071}
+  m_Layer: 0
+  m_Name: Bubble
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!33 &828072071
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 828072070}
+  m_Mesh: {fileID: 0}
+--- !u!23 &828072072
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 828072070}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RenderingLayerMask: 257
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 15303, guid: 0000000000000000f000000000000000, type: 0}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!114 &828072073
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 828072070}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 61ee54fb9d0e87a46b089a8317fa8a64, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  numSimsPerFrame: 10
+  springConst: 0.1
+  damping: 0.01
+  cam: {fileID: 1451789624}
+  clickRadius: 2.5
+  clickStrength: 10
+--- !u!4 &828072074
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 828072070}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.315, y: 1.766, z: -4.629}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &831779751
 GameObject:
   m_ObjectHideFlags: 0
@@ -1673,9 +1778,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   spawnCenter: {fileID: 1875805671}
   typeToSpawn: 1
-  numParticlesToSpawn: 300
+  numParticlesToSpawn: 500
   minParticleDensity: 0.5
-  bubbleRadius: 1.5
+  bubbleRadius: 1
 --- !u!4 &1875805671
 Transform:
   m_ObjectHideFlags: 0
@@ -2053,3 +2158,4 @@ SceneRoots:
   - {fileID: 1344706647}
   - {fileID: 2019785071}
   - {fileID: 911786089}
+  - {fileID: 828072074}

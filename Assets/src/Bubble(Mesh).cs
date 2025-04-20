@@ -12,7 +12,8 @@ public class Bubble_m : MonoBehaviour
     // Start is called before the first frame update
 
     private MeshFilter meshF;
-    private List<SurfaceParticle> surfaceParticles { get; set; }
+    private List<SurfaceParticle> m_surfaceParticles;
+    public List<SurfaceParticle> surfaceParticles { get {return m_surfaceParticles; } private set { m_surfaceParticles = value; } }
     private int numTries;
 
     public int numSimsPerFrame = 3;
@@ -27,7 +28,7 @@ public class Bubble_m : MonoBehaviour
 
     private Vector3 initialVelocity = Vector3.zero;
     private Vector3 initialAcceleration = Vector3.zero;
-    void Start()
+    void Awake()
     {
         meshF = GetComponent<MeshFilter>();
         //LazySquirrelLabs.SphereGenerator.Generators.IcosphereGenerator gen = new LazySquirrelLabs.SphereGenerator.Generators.IcosphereGenerator(1.0f, 1);
@@ -44,12 +45,12 @@ public class Bubble_m : MonoBehaviour
         
         for (int i = 0; i < numSimsPerFrame; ++i)
         {
-            runSim();
+            //runSim();
         }
 
 
         bubbleToMesh();
-        CheckMouseClick();
+        //CheckMouseClick();
 
     }
 

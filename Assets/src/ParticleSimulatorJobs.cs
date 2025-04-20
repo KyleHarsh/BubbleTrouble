@@ -21,7 +21,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
 
     private int numParticles;
 
-    private List<InternalParticle> internalParticles;
+    private List<InternalParticle> particles;  // combination of surface particles and internal particles
     private NativeArray<InternalSpring> internalSprings;
 
     private int numSprings;
@@ -61,22 +61,32 @@ public class ParticleSimulatorJobs : MonoBehaviour
     public float particleMass;
 
     private float distanceToCamera;
-    // Define a radius for influence.
+    // Define a radius for influence for dragging
     public float mouseDragRadius = 1.0f;
     public float mouseDragStrength = 1.0f;
 
     public float dragCoefficient = 0.1f; // Tweak this parameter
 
+    public Vector3 windDirection;
+    public float windForce;
+
+    [SerializeField] private Bubble_m bubbleSurface;
+    private List<SurfaceParticle> surfaceParticles;
+
     // Start is called before the first frame update
     void Start()
     {
+        bubbleSurface.transform.position = spawner.transform.position;
+        surfaceParticles = bubbleSurface.surfaceParticles;
+        distanceToCamera = Vector3.Distance(cameraTransform.position, mouseScreenTransform.position);
         SpawnParticles();
     }
 
     public void SpawnParticles()
     {
-        internalParticles = spawner.SpawnInternalParticles();
-        numParticles = internalParticles.Count;
+        particles = spawner.SpawnInternalParticles();
+        particles.AddRange(surfaceParticles);
+        numParticles = particles.Count;
 
         // 2) Compute Poisson spacing & smoothing length (h = 2×spacing)
         float sphereVolume = (4f / 3f) * Mathf.PI * Mathf.Pow(spawner.bubbleRadius, 3);
@@ -98,7 +108,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
         // 4) Copy initial data into arrays
         for (int i = 0; i < numParticles; i++)
         {
-            var p = internalParticles[i];
+            var p = particles[i];
             positions[i] = p.position;
             velocities[i] = p.velocity;
             prevPositions[i] = p.position;
@@ -123,6 +133,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
                 float r = math.distance(positions[i], positions[j]);
                 if (j > i)
                 {
+                    if (particles[i].GetType() == typeof(SurfaceParticle) && particles[j].GetType() == typeof(SurfaceParticle)) continue;
                     springList.Add(new InternalSpring { particleA = i, particleB = j, restLength = r });
                 }
                 else if (j == i) continue;
@@ -153,28 +164,39 @@ public class ParticleSimulatorJobs : MonoBehaviour
     private void Update()
     {
 
-        if (internalParticles != null)
+        if (particles != null)
         {
             { // rendering
-                // Update your particle simulation here (or elsewhere) and update the particles list
 
                 // Prepare instance matrices for each particle.
-                int count = internalParticles.Count;
+                int count = particles.Count;
                 Matrix4x4[] matrices = new Matrix4x4[count];
                 for (int i = 0; i < count; i++)
                 {
                     // transformation matrix for each particle
-                    matrices[i] = Matrix4x4.TRS(internalParticles[i].position, Quaternion.identity, Vector3.one * particleRenderRadius);
+                    matrices[i] = Matrix4x4.TRS(particles[i].position, Quaternion.identity, Vector3.one * particleRenderRadius);
                 }
 
-                // Render all particles in one call.
-                // Note: There is a limit to the number of instances per call (e.g., 1023), so you might need to batch them.
+                // Render all particles in one call
                 Graphics.DrawMeshInstanced(particleMesh, 0, particleMaterial, matrices);
             }
 
             { // SPH fluid simulation using substeps
                 int substeps = 4;
                 float subDeltaTime = Time.deltaTime / substeps;
+                Vector3 windAcceleration = windDirection * windForce;
+                Vector3 mousePos = Vector3.zero;
+                Vector3 mouseWorld = Vector3.zero;
+                bool mouseClicked = false;
+
+                // convert screen→world at some plane or depth
+                if (Input.GetMouseButton(0))
+                {
+                    mousePos = Input.mousePosition;
+                    mousePos.z = cameraTransform.position.z * -1f; // or set to your fluid depth
+                    mouseWorld = Camera.main.ScreenToWorldPoint(mousePos);
+                    mouseClicked = true;
+                }
 
                 for (int step = 0; step < substeps; step++)
                 {
@@ -183,6 +205,10 @@ public class ParticleSimulatorJobs : MonoBehaviour
                     {
                         gravity = new float3(0, -gravityForce, 0),
                         dt = subDeltaTime,
+                        dragCoeff = dragCoefficient,
+                        mousePos = mouseWorld,
+                        mouseRadius = mouseDragRadius,
+                        mouseStrength = (mouseClicked)? mouseDragStrength : 0f,
                         positions = positions,
                         velocities = velocities,
                         prevPos = prevPositions
@@ -229,14 +255,13 @@ public class ParticleSimulatorJobs : MonoBehaviour
                         pressures[i] = nearPressures[i] = 0f;
                     }
 
-                    // E) Spring corrections on the CPU
-                    // ZERO OUT springDisp
+                    // E) Spring corrections 
+                    // zero out springDisp before calculations
                     for(int i = 0; i < springDisp.Length; i++)
                     {
                         springDisp[i] = float3.zero;
                     }
 
-                    // after your DisplacementJob completes and writes newPositions…
                     var springJob = new SpringJob()
                     {
                         dt = subDeltaTime,
@@ -247,7 +272,8 @@ public class ParticleSimulatorJobs : MonoBehaviour
                         springs = internalSprings,
                         newPositions = newPositions
                     };
-                    springJob.Schedule().Complete();
+                    JobHandle h4 = springJob.Schedule();
+                    h4.Complete();
 
                     // F) Velocity update
                     var vu = new VelocityUpdateJob
@@ -257,14 +283,11 @@ public class ParticleSimulatorJobs : MonoBehaviour
                         prevPos = prevPositions,
                         velocities = velocities
                     };
-                    JobHandle h4 = vu.Schedule(numParticles, 64);
-                    h4.Complete();
-                    
-                    /*
-                    // small damping
-                    for (int i = 0; i < numParticles; i++)
-                        velocities[i] *= 0.99f;*/
-                    
+                    JobHandle h5 = vu.Schedule(numParticles, 64, h4);
+                    h5.Complete();
+
+                    ApplyMouseDragForce(subDeltaTime);
+
                     // G) Swap buffers for next substep
                     var tmp = positions; positions = newPositions; newPositions = tmp;
                 }
@@ -272,10 +295,11 @@ public class ParticleSimulatorJobs : MonoBehaviour
                 // 2) Copy back for rendering
                 for (int i = 0; i < numParticles; i++)
                 {
-                    internalParticles[i].position = positions[i];
-                    internalParticles[i].velocity = velocities[i];
+                    particles[i].position = positions[i];
+                    particles[i].velocity = velocities[i];
                 }
 
+                
             }
         }
 
@@ -285,7 +309,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
 
     private void ApplyAirResistance(float dt)
     {
-        foreach (InternalParticle p in internalParticles)
+        foreach (InternalParticle p in particles)
         {
             // Reduces the velocity proportionally to the current value.
             p.velocity *= (1.0f - dragCoefficient * dt);
@@ -303,7 +327,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
             Vector3 mouseWorldPos = Camera.main.ScreenToWorldPoint(mouseScreenPos);
 
             // Iterate over all particles.
-            foreach (var particle in internalParticles)
+            foreach (var particle in particles)
             {
                 float distance = Vector3.Distance(particle.position, mouseWorldPos);
                 if (distance < mouseDragRadius)
@@ -352,15 +376,40 @@ public class ParticleSimulatorJobs : MonoBehaviour
 [BurstCompile]
 struct PredictJob : IJobParallelFor
 {
-    public float3 gravity;
-    public float dt;
-    public NativeArray<float3> positions, velocities, prevPos;
+    public float3 gravity;         
+    public float  dt;
+    public float3 windAccel;
+    public float dragCoeff;
+    public float3 mousePos;
+    public float mouseRadius;
+    public float mouseStrength;
+
+    public NativeArray<float3> positions;
+    public NativeArray<float3> velocities;
+    public NativeArray<float3> prevPos;
 
     public void Execute(int i)
     {
+        // 1) save old
         prevPos[i] = positions[i];
-        velocities[i] += gravity * dt;
-        positions[i] += velocities[i] * dt;
+
+        float3 v = velocities[i];
+
+        v += (gravity + windAccel) * dt;
+
+        v *= (1f - dragCoeff) * dt;
+
+        float3 diff = mousePos - positions[i];
+        float d = math.length(diff);
+        if(d < mouseRadius && d > 1e-5f)
+        {
+            float3 dir = diff / d;
+            v += dir * (mouseStrength * dt);
+        }
+
+        velocities[i] = v;
+        // positions array is your “current” buffer so the next jobs see it
+        positions[i] += v*dt;
     }
 }
 
