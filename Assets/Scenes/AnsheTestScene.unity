@@ -202,21 +202,25 @@ MonoBehaviour:
   spawner: {fileID: 1875805670}
   cameraTransform: {fileID: 1451789625}
   mouseScreenTransform: {fileID: 911786089}
-  k_p: 0.004
-  k_p2: 0.01
+  substeps: 4
+  k_p: 0.015
+  k_p2: 0.02
   n0: 12
   influenceRadius: 0
+  pressureIterations: 5
+  gravityForce: 9.8
+  particleMass: 1
   springStiffness: 0.6
-  plasticity: 0.3
-  yieldRatio: 0.1
   springUpdateThreshold: 0.1
+  surfaceTensionCoeff: 0.5
   particleMesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
   particleMaterial: {fileID: 2100000, guid: 0bfc57d85b5db67488db26fdbca25c7e, type: 2}
   particleRenderRadius: 0.1
-  gravityForce: 0
-  particleMass: 0
-  mouseDragRadius: 3
-  mouseDragStrength: 2
+  mouseDragRadius: 4
+  mouseDragStrength: 100
+  dragging: 0
+  dragMomentumDuration: 1
+  dragTimer: 0
   dragCoefficient: 0.4
   windDirection: {x: 0, y: 0, z: 0}
   windForce: 0
@@ -1779,7 +1783,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   spawnCenter: {fileID: 1875805671}
   typeToSpawn: 1
-  numParticlesToSpawn: 200
+  numParticlesToSpawn: 500
   minParticleDensity: 0.5
   bubbleRadius: 1
 --- !u!4 &1875805671

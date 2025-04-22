@@ -1,12 +1,14 @@
 ﻿using NUnit.Framework;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.VisualScripting;
 using UnityEngine;
+using static UnityEditor.PlayerSettings;
 using static UnityEngine.ParticleSystem;
 
 public class ParticleSimulatorJobs : MonoBehaviour
@@ -18,6 +20,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
     NativeArray<float> densities;
     NativeArray<float> pressures;
     NativeArray<float> nearPressures;
+    NativeArray<float3> dragRelativePositions;
 
     private int numParticles;
 
@@ -37,17 +40,23 @@ public class ParticleSimulatorJobs : MonoBehaviour
 
     private bool spawned = false;
 
+    public int substeps = 4;
+
     public float k_p = 0.004f;   // Pressure stiffness coefficient
     public float k_p2 = 0.01f;   // Near-pressure coefficient
     public float n0 = 10f;       // Rest (target) density
     public float influenceRadius;
+    public int pressureIterations = 3;
+
+    public float gravityForce = 9.8f;
+    public float particleMass = 1.0f;
 
     public float springStiffness = 0.3f;  // k_spring, controls how strong the spring force is.
-    public float plasticity = 0.3f;       // α, the plasticity constant for rest length adjustment.
-    public float yieldRatio = 0.1f;       // γ, the yield threshold ratio.
 
     private int lastSpringUpdateFrame = -1; // to limit updates to once per frame
     public float springUpdateThreshold = 0.1f; // minimum movement needed to recheck springs
+
+    public float surfaceTensionCoeff = 0.5f;
 
     #region Rendering
     public Mesh particleMesh;
@@ -57,13 +66,13 @@ public class ParticleSimulatorJobs : MonoBehaviour
 
     private List<Matrix4x4> transformMatrices = new List<Matrix4x4>();
 
-    public float gravityForce = 9.8f;
-    public float particleMass;
-
     private float distanceToCamera;
     // Define a radius for influence for dragging
     public float mouseDragRadius = 1.0f;
     public float mouseDragStrength = 1.0f;
+    [SerializeField] private bool dragging = false;
+    public float dragMomentumDuration = 1f;
+    [SerializeField] private float dragTimer = 0.0f;
 
     public float dragCoefficient = 0.1f; // Tweak this parameter
 
@@ -88,6 +97,10 @@ public class ParticleSimulatorJobs : MonoBehaviour
         particles.AddRange(surfaceParticles);
         numParticles = particles.Count;
 
+        float invDt2 = substeps * substeps; // = 16
+        k_p *= invDt2;   // e.g. from 0.004 → 0.064
+        k_p2 *= invDt2;   // e.g. from 0.01  → 0.16
+
         // 2) Compute Poisson spacing & smoothing length (h = 2×spacing)
         float sphereVolume = (4f / 3f) * Mathf.PI * Mathf.Pow(spawner.bubbleRadius, 3);
         float avgVolPerPt = sphereVolume / numParticles;
@@ -104,6 +117,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
         densities = new NativeArray<float>(numParticles, Allocator.Persistent);
         pressures = new NativeArray<float>(numParticles, Allocator.Persistent);
         nearPressures = new NativeArray<float>(numParticles, Allocator.Persistent);
+        dragRelativePositions = new NativeArray<float3>(numParticles, Allocator.Persistent);
 
         // 4) Copy initial data into arrays
         for (int i = 0; i < numParticles; i++)
@@ -125,7 +139,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
         for (int i = 0; i < numParticles; i++)
         {
             neighbors.Clear();
-            float rho = 0f;
+            float rho = 1f;
             neighborGrid.GetNeighbors(positions[i], ref neighbors);
 
             foreach (int j in neighbors)
@@ -133,12 +147,11 @@ public class ParticleSimulatorJobs : MonoBehaviour
                 float r = math.distance(positions[i], positions[j]);
                 if (j > i)
                 {
-                    if (particles[i].GetType() == typeof(SurfaceParticle) && particles[j].GetType() == typeof(SurfaceParticle)) continue;
                     springList.Add(new InternalSpring { particleA = i, particleB = j, restLength = r });
                 }
-                else if (j == i) continue;
                 if (r < influenceRadius)
                 {
+
                     float q = r / influenceRadius;
                     float w = 1f - q;
                     rho += w * w;
@@ -149,7 +162,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
         }
         neighbors.Dispose();
 
-        n0 = (sumRho / numParticles) * 2f;
+        n0 = (sumRho / numParticles)*2.5f;
 
         // upload to a native array
         internalSprings = new NativeArray<InternalSpring>(springList.Count, Allocator.Persistent);
@@ -180,23 +193,49 @@ public class ParticleSimulatorJobs : MonoBehaviour
                 // Render all particles in one call
                 Graphics.DrawMeshInstanced(particleMesh, 0, particleMaterial, matrices);
             }
+            //Debug.Log($"n₀ = {n0:F2}, ρ[0] = {densities[0]:F2},  ρₘᵢₙ = {densities.Min():F2}, ρₘₐₓ = {densities.Max():F2}");
+
 
             { // SPH fluid simulation using substeps
-                int substeps = 4;
                 float subDeltaTime = Time.deltaTime / substeps;
                 Vector3 windAcceleration = windDirection * windForce;
                 Vector3 mousePos = Vector3.zero;
                 Vector3 mouseWorld = Vector3.zero;
-                bool mouseClicked = false;
+
+                if (!dragging && dragTimer > 0)
+                {
+                    dragTimer -= Time.deltaTime;
+                }
 
                 // convert screen→world at some plane or depth
-                if (Input.GetMouseButton(0))
+                if (Input.GetMouseButtonDown(0) && !dragging)
+                {
+                    dragging = true;
+                    for (int i = 0; i < particles.Count; i++)
+                    {
+                        Vector3 clickPos = Input.mousePosition;
+                        clickPos.z = cameraTransform.position.z * -1f;
+                        clickPos = Camera.main.ScreenToWorldPoint(clickPos);
+                        if (Vector3.Distance(positions[i], clickPos) < mouseDragRadius)
+                        {
+                            Vector3 vecPos = new Vector3(positions[i].x, positions[i].y, positions[i].z);
+                            dragRelativePositions[i] = vecPos - clickPos;
+                        }
+                    }
+                }
+                if (Input.GetMouseButton(0) && dragging)
                 {
                     mousePos = Input.mousePosition;
                     mousePos.z = cameraTransform.position.z * -1f; // or set to your fluid depth
                     mouseWorld = Camera.main.ScreenToWorldPoint(mousePos);
-                    mouseClicked = true;
                 }
+                if (Input.GetMouseButtonUp(0) && dragging)
+                {
+                    dragging = false;
+                    dragTimer = dragMomentumDuration;
+                }
+
+                NativeArray<float3> springCorrected = new NativeArray<float3>(numParticles, Allocator.TempJob);
 
                 for (int step = 0; step < substeps; step++)
                 {
@@ -206,15 +245,37 @@ public class ParticleSimulatorJobs : MonoBehaviour
                         gravity = new float3(0, -gravityForce, 0),
                         dt = subDeltaTime,
                         dragCoeff = dragCoefficient,
+                        windAccel = windAcceleration,
                         mousePos = mouseWorld,
                         mouseRadius = mouseDragRadius,
-                        mouseStrength = (mouseClicked)? mouseDragStrength : 0f,
+                        mouseStrength = (dragging) ? mouseDragStrength : ((dragTimer > 0)? mouseDragStrength*(dragTimer/dragMomentumDuration) : 0f),
                         positions = positions,
                         velocities = velocities,
-                        prevPos = prevPositions
+                        prevPos = prevPositions,
+                        dragRelativePositions = dragRelativePositions
                     };
                     JobHandle h1 = pj.Schedule(numParticles, 64);
                     h1.Complete(); // we need positions[] updated before building the grid
+
+                    // E) Spring corrections 
+                    // 1. copy current positions into the scratch buffer
+                    
+                    springCorrected.CopyFrom(positions);
+
+                    var springJob = new SpringJob()
+                    {
+                        dt = subDeltaTime,
+                        h = influenceRadius,
+                        k_spring = springStiffness,
+                        springs = internalSprings,
+                        positionsIn = positions,
+                        positionsOut = springCorrected
+                    };
+                    JobHandle h4 = springJob.Schedule(h1);
+                    h4.Complete();
+
+                    positions.CopyFrom(springCorrected);
+                    
 
                     // B) Rebuild grid with new positions
                     neighborGrid.Clear();
@@ -234,48 +295,45 @@ public class ParticleSimulatorJobs : MonoBehaviour
                         k_p2 = k_p2,
                         map = neighborMap
                     };
-                    JobHandle h2 = dj.Schedule(numParticles, 64, h1);
+                    JobHandle h2 = dj.Schedule(numParticles, 64, h4);
+                    h2.Complete();
 
-                    // D) Displacement
-                    var disp = new DisplacementJob
+                    // 4) *pressure solve iterations*
+                    JobHandle h3;
+                    for (int iter = 0; iter < pressureIterations; iter++)
                     {
-                        cellSize = influenceRadius,
-                        dt = subDeltaTime,
-                        positionsIn = positions,
-                        positionsOut = newPositions,
-                        pressures = pressures,
-                        nearPressures = nearPressures,
-                        map = neighborMap
-                    };
-                    JobHandle h3 = disp.Schedule(numParticles, 64, h2);
-                    h3.Complete();
+                        var disp = new DisplacementJob
+                        {
+                            cellSize = influenceRadius,
+                            dt = subDeltaTime,
+                            positionsIn = positions,
+                            positionsOut = newPositions,
+                            pressures = pressures,
+                            nearPressures = nearPressures,
+                            map = neighborMap
+                        };
+                        h3 = disp.Schedule(numParticles, 64, h2);
+                        h3.Complete();
 
-                    for (int i = 0; i < pressures.Length; i++)
-                    {
-                        pressures[i] = nearPressures[i] = 0f;
+                        // swap buffers so next iteration sees the corrected positions
+                        var temp = positions; positions = newPositions; newPositions = temp;
+
+                        // recompute densities & pressures on the moved positions
+                        dj = new DensityJob
+                        {
+                            cellSize = influenceRadius,
+                            positions = positions,
+                            densities = densities,
+                            pressures = pressures,
+                            nearPressures = nearPressures,
+                            n0 = n0,
+                            k_p = k_p,
+                            k_p2 = k_p2,
+                            map = neighborMap
+                        };
+                        h2 = dj.Schedule(numParticles, 64);
+                        h2.Complete();
                     }
-
-                    // E) Spring corrections 
-                    // zero out springDisp before calculations
-                    for(int i = 0; i < springDisp.Length; i++)
-                    {
-                        springDisp[i] = float3.zero;
-                    }
-
-                    var springJob = new SpringJob()
-                    {
-                        dt = subDeltaTime,
-                        k_spring = springStiffness,
-                        plasticity = plasticity,
-                        yieldRatio = yieldRatio,
-                        h = influenceRadius,
-                        springs = internalSprings,
-                        newPositions = newPositions
-                    };
-                    JobHandle h4 = springJob.Schedule();
-                    h4.Complete();
-
-                    // F) Velocity update
                     var vu = new VelocityUpdateJob
                     {
                         dt = subDeltaTime,
@@ -283,15 +341,12 @@ public class ParticleSimulatorJobs : MonoBehaviour
                         prevPos = prevPositions,
                         velocities = velocities
                     };
-                    JobHandle h5 = vu.Schedule(numParticles, 64, h4);
-                    h5.Complete();
-
-                    ApplyMouseDragForce(subDeltaTime);
-
-                    // G) Swap buffers for next substep
-                    var tmp = positions; positions = newPositions; newPositions = tmp;
+                    JobHandle h5 = vu.Schedule(numParticles, 64, h2);
+                    h5.Complete();   
                 }
 
+                springCorrected.Dispose();
+                
                 // 2) Copy back for rendering
                 for (int i = 0; i < numParticles; i++)
                 {
@@ -299,22 +354,13 @@ public class ParticleSimulatorJobs : MonoBehaviour
                     particles[i].velocity = velocities[i];
                 }
 
-                
+
             }
         }
 
     }
 
     #region External Forces
-
-    private void ApplyAirResistance(float dt)
-    {
-        foreach (InternalParticle p in particles)
-        {
-            // Reduces the velocity proportionally to the current value.
-            p.velocity *= (1.0f - dragCoefficient * dt);
-        }
-    }
 
     void ApplyMouseDragForce(float deltaTime)
     {
@@ -366,7 +412,8 @@ public class ParticleSimulatorJobs : MonoBehaviour
         densities.Dispose();
         pressures.Dispose();
         nearPressures.Dispose();
-        if (springDisp.IsCreated) springDisp.Dispose();
+        dragRelativePositions.Dispose();
+        internalSprings.Dispose();
     }
 
 }
@@ -376,8 +423,8 @@ public class ParticleSimulatorJobs : MonoBehaviour
 [BurstCompile]
 struct PredictJob : IJobParallelFor
 {
-    public float3 gravity;         
-    public float  dt;
+    public float3 gravity;
+    public float dt;
     public float3 windAccel;
     public float dragCoeff;
     public float3 mousePos;
@@ -387,6 +434,7 @@ struct PredictJob : IJobParallelFor
     public NativeArray<float3> positions;
     public NativeArray<float3> velocities;
     public NativeArray<float3> prevPos;
+    public NativeArray<float3> dragRelativePositions;
 
     public void Execute(int i)
     {
@@ -399,17 +447,21 @@ struct PredictJob : IJobParallelFor
 
         v *= (1f - dragCoeff) * dt;
 
-        float3 diff = mousePos - positions[i];
+        // new changes, particle drag target is set point away from mouse position when click start (within mouseRadius)
+
+        float3 dragTarget = mousePos + dragRelativePositions[i];
+        float3 diff = dragTarget - positions[i];
         float d = math.length(diff);
-        if(d < mouseRadius && d > 1e-5f)
+        if (d < mouseRadius && d > 1e-5f)
         {
             float3 dir = diff / d;
+           
             v += dir * (mouseStrength * dt);
         }
 
         velocities[i] = v;
         // positions array is your “current” buffer so the next jobs see it
-        positions[i] += v*dt;
+        positions[i] += v * dt;
     }
 }
 
@@ -429,7 +481,9 @@ struct DensityJob : IJobParallelFor
         int cy = (int)math.floor(pi.y / cellSize);
         int cz = (int)math.floor(pi.z / cellSize);
 
-        float sum = 0f, sumNear = 0f;
+        // in DensityJob.Execute:
+        float sum = 1f;       // ← start at 1 for the self‐density
+        float sumNear = 1f;   // ← ditto
         for (int dx = -1; dx <= 1; dx++)
             for (int dy = -1; dy <= 1; dy++)
                 for (int dz = -1; dz <= 1; dz++)
@@ -504,7 +558,7 @@ struct DisplacementJob : IJobParallelFor
                             float w1 = w0 * w0;
                             float P = pressures[i] + pressures[j];
                             float NP = nearPressures[i] + nearPressures[j];
-                            float coeff = (dt * dt) * (P * w0 + NP * w1);
+                            float coeff = (dt*dt) * (P * w0 + NP * w1);
                             float3 dir = (pj - pi) / r;
                             disp += coeff * dir;
                         } while (map.TryGetNextValue(out j, ref iter));
@@ -534,42 +588,33 @@ struct SpringJob : IJob
 {
     public float dt;
     public float k_spring;
-    public float plasticity;
-    public float yieldRatio;
     public float h;                    // influence radius
-    public NativeArray<InternalSpring> springs;  // your NativeArray<Spring>
-    public NativeArray<float3> newPositions;
+    public NativeArray<InternalSpring> springs;
+    public NativeArray<float3> positionsIn;
+    public NativeArray<float3> positionsOut;
 
     public void Execute()
     {
         for (int si = 0; si < springs.Length; si++)
         {
             var s = springs[si];
+            float3 pa = positionsIn[s.particleA];
+            float3 pb = positionsIn[s.particleB];
 
-            float3 pa = newPositions[s.particleA];
-            float3 pb = newPositions[s.particleB];
-            float r = math.distance(pa, pb);
-            if (r < 1e-6f || r > h)
-                continue;
+            float3 dir = pb - pa;
+            float r = math.length(dir);
+            if (r <= 1e-6f || r > h) continue;
+            dir /= r;
 
-            float3 dir = (pb - pa) / r;
-            float Δ = s.restLength - r;
-            float mag = k_spring * Δ * (dt * dt);
-            float3 D = dir * (0.5f * mag);
+            // Hooke force + damper
+            float Fs = k_spring * (s.restLength - r);
 
-            // apply equal & opposite
-            newPositions[s.particleA] -= D;
-            newPositions[s.particleB] += D;
+            float3 dp = dt * dt * (1f - s.restLength / h) * Fs * dir;
 
-            // plasticity update
-            float tol = yieldRatio * s.restLength;
-            if (r > s.restLength + tol)
-                s.restLength += plasticity * (r - s.restLength - tol) * dt;
-            else if (r < s.restLength - tol)
-                s.restLength -= plasticity * (s.restLength - tol - r) * dt;
-
-            springs[si] = s;
+            positionsOut[s.particleA] -= dp * 0.5f;
+            positionsOut[s.particleB] += dp * 0.5f;
         }
+        
     }
 }
 
