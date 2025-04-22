@@ -1,8 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-
-public struct InternalSpring 
+public struct InternalSpring : IEnumerable<InternalSpring>
 {
     public int particleA;
     public int particleB;
@@ -13,6 +12,16 @@ public struct InternalSpring
         particleA = a;
         particleB = b;
         this.restLength = restLength;
+    }
+
+    public IEnumerator<InternalSpring> GetEnumerator()
+    {
+        throw new System.NotImplementedException();
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        throw new System.NotImplementedException();
     }
 }
 
