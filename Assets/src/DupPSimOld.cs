@@ -13,6 +13,7 @@ using static UnityEngine.ParticleSystem;
 
 public class ParticleSimulatorJobs : MonoBehaviour
 {
+    /*
     NativeArray<float3> positions;
     NativeArray<float3> newPositions;
     NativeArray<float3> velocities;
@@ -89,7 +90,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        if(bubbleSurface != null && bubbleSurface.gameObject.activeSelf)
+        if (bubbleSurface != null && bubbleSurface.gameObject.activeSelf)
         {
             bubbleSurface.transform.position = spawner.transform.position;
             surfaceParticles = bubbleSurface.surfaceParticles;
@@ -101,7 +102,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
     public void SpawnParticles()
     {
         particles = spawner.SpawnInternalParticles();
-        if(bubbleSurface != null && bubbleSurface.gameObject.activeSelf) particles.AddRange(surfaceParticles);
+        if (bubbleSurface != null && bubbleSurface.gameObject.activeSelf) particles.AddRange(surfaceParticles);
         numParticles = particles.Count;
 
         float invDt2 = substeps * substeps; // = 16
@@ -169,7 +170,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
         }
         neighbors.Dispose();
 
-        n0 = (sumRho / numParticles)*2.5f;
+        n0 = (sumRho / numParticles) * 2.5f;
 
         // upload to a native array
         internalSprings = new NativeArray<InternalSpring>(springList.Count, Allocator.Persistent);
@@ -273,7 +274,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
                             if (!springLookup.Remove(key))
                             {
                                 // new spring
-                                springList.Add(new InternalSpring( i, j, r ));
+                                springList.Add(new InternalSpring(i, j, r));
                             }
                         }
                     }
@@ -307,7 +308,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
                         windAccel = windAcceleration,
                         mousePos = mouseWorld,
                         mouseRadius = mouseDragRadius,
-                        mouseStrength = (dragging) ? mouseDragStrength : ((dragTimer > 0)? mouseDragStrength*(dragTimer/dragMomentumDuration) : 0f),
+                        mouseStrength = (dragging) ? mouseDragStrength : ((dragTimer > 0) ? mouseDragStrength * (dragTimer / dragMomentumDuration) : 0f),
                         positions = positions,
                         velocities = velocities,
                         prevPos = prevPositions,
@@ -336,9 +337,9 @@ public class ParticleSimulatorJobs : MonoBehaviour
                     h4.Complete();
 
                     positions.CopyFrom(springCorrected);
-                    
 
-                    
+
+
 
                     // C) Density
                     var dj = new DensityJob
@@ -405,11 +406,11 @@ public class ParticleSimulatorJobs : MonoBehaviour
                         velocities = velocities
                     };
                     JobHandle h5 = vu.Schedule(numParticles, 64, h2);
-                    h5.Complete();   
+                    h5.Complete();
                 }
 
                 springCorrected.Dispose();
-                
+
                 // 2) Copy back for rendering
                 for (int i = 0; i < numParticles; i++)
                 {
@@ -477,11 +478,11 @@ public class ParticleSimulatorJobs : MonoBehaviour
         nearPressures.Dispose();
         dragRelativePositions.Dispose();
         internalSprings.Dispose();
-    }
+    }*/
 
 }
 
-
+/*
 #region Job Structs
 [BurstCompile]
 struct PredictJob : IJobParallelFor
@@ -518,7 +519,7 @@ struct PredictJob : IJobParallelFor
         if (d < mouseRadius && d > 1e-5f)
         {
             float3 dir = diff / d;
-           
+
             v += dir * (mouseStrength * dt);
         }
 
@@ -621,7 +622,7 @@ struct DisplacementJob : IJobParallelFor
                             float w1 = w0 * w0;
                             float P = pressures[i] + pressures[j];
                             float NP = nearPressures[i] + nearPressures[j];
-                            float coeff = (dt*dt) * (P * w0 + NP * w1);
+                            float coeff = (dt * dt) * (P * w0 + NP * w1);
                             float3 dir = (pj - pi) / r;
                             disp += coeff * dir;
                         } while (map.TryGetNextValue(out j, ref iter));
@@ -685,3 +686,4 @@ struct SpringJob : IJobParallelFor
 
 
 #endregion
+*/

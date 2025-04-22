@@ -6,10 +6,12 @@ using UnityEngine;
 public class InternalParticle
 {
     public float influenceRadius = 1.0f;
+    public Vector3 normal;
     public Vector3 position;
     public Vector3 previousPosition;
     public Vector3 velocity;
     public float density;
+    public float nearDensity;
     public float pressure;
     public float nearPressure;
     public Vector3 lastSpringUpdatePosition = Vector3.zero;
@@ -23,3 +25,14 @@ public class InternalParticle
         influenceRadius = influence;
     }
 }
+
+public struct NeighborPair
+{
+    public int i, j;
+    public NeighborPair(int i, int j)
+    {
+        this.i = i;
+        this.j = j;
+    }
+}
+
