@@ -13,14 +13,16 @@ using static UnityEngine.ParticleSystem;
 
 public class ParticleSimulatorJobs : MonoBehaviour
 {
-    NativeArray<float3> positions;
-    NativeArray<float3> newPositions;
-    NativeArray<float3> velocities;
-    NativeArray<float3> prevPositions;
+    NativeArray<float3> positions;  // current position
+    NativeArray<float3> newPositions;  // buffer position for multi threading
+    NativeArray<float3> velocities;    // used for initial external force prediction
+    NativeArray<float3> prevPositions;  // position values at start of substep
     NativeArray<float> densities;
     NativeArray<float> pressures;
     NativeArray<float> nearPressures;
     NativeArray<float3> dragRelativePositions;
+    NativeArray<float3> normals;       // ∇C
+    NativeArray<float> colorField;    // C
 
     private int numParticles;
 
@@ -52,6 +54,9 @@ public class ParticleSimulatorJobs : MonoBehaviour
     public float particleMass = 1.0f;
 
     public float springStiffness = 0.3f;  // k_spring, controls how strong the spring force is.
+    public float plasticity = 0.2f;
+    public float yieldRatio = 0.1f;
+    public float dampingCoeff = 0.2f;
 
     private int lastSpringUpdateFrame = -1; // to limit updates to once per frame
     public float springUpdateThreshold = 0.1f; // minimum movement needed to recheck springs
@@ -62,6 +67,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
     public Mesh particleMesh;
     public Material particleMaterial;
     public float particleRenderRadius = 0.1f;
+    public bool renderParticles = true;
     #endregion
 
     private List<Matrix4x4> transformMatrices = new List<Matrix4x4>();
@@ -85,8 +91,12 @@ public class ParticleSimulatorJobs : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        bubbleSurface.transform.position = spawner.transform.position;
-        surfaceParticles = bubbleSurface.surfaceParticles;
+        if (bubbleSurface != null && bubbleSurface.gameObject.activeSelf)
+        {
+            bubbleSurface.transform.position = spawner.transform.position;
+            surfaceParticles = bubbleSurface.surfaceParticles;
+        }
+            
         distanceToCamera = Vector3.Distance(cameraTransform.position, mouseScreenTransform.position);
         SpawnParticles();
     }
@@ -94,7 +104,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
     public void SpawnParticles()
     {
         particles = spawner.SpawnInternalParticles();
-        particles.AddRange(surfaceParticles);
+        if (bubbleSurface != null && bubbleSurface.gameObject.activeSelf) particles.AddRange(surfaceParticles);
         numParticles = particles.Count;
 
         float invDt2 = substeps * substeps; // = 16
@@ -118,6 +128,8 @@ public class ParticleSimulatorJobs : MonoBehaviour
         pressures = new NativeArray<float>(numParticles, Allocator.Persistent);
         nearPressures = new NativeArray<float>(numParticles, Allocator.Persistent);
         dragRelativePositions = new NativeArray<float3>(numParticles, Allocator.Persistent);
+        normals = new NativeArray<float3>(numParticles, Allocator.Persistent);
+        colorField = new NativeArray<float>(numParticles, Allocator.Persistent);
 
         // 4) Copy initial data into arrays
         for (int i = 0; i < numParticles; i++)
@@ -145,12 +157,10 @@ public class ParticleSimulatorJobs : MonoBehaviour
             foreach (int j in neighbors)
             {
                 float r = math.distance(positions[i], positions[j]);
-                if (j > i)
-                {
-                    springList.Add(new InternalSpring { particleA = i, particleB = j, restLength = r });
-                }
+
                 if (r < influenceRadius)
                 {
+                    springList.Add(new InternalSpring { particleA = i, particleB = j, restLength = r });
 
                     float q = r / influenceRadius;
                     float w = 1f - q;
@@ -171,7 +181,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
 
         numSprings = internalSprings.Length;
 
-        springDisp = new NativeArray<float3>(numParticles, Allocator.Persistent);
+        //springDisp = new NativeArray<float3>(numParticles, Allocator.Persistent);
     }
 
     private void Update()
@@ -179,6 +189,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
 
         if (particles != null)
         {
+            if(renderParticles)
             { // rendering
 
                 // Prepare instance matrices for each particle.
@@ -221,6 +232,10 @@ public class ParticleSimulatorJobs : MonoBehaviour
                             Vector3 vecPos = new Vector3(positions[i].x, positions[i].y, positions[i].z);
                             dragRelativePositions[i] = vecPos - clickPos;
                         }
+                        else
+                        {
+                            dragRelativePositions[i] = float3.zero;
+                        }
                     }
                 }
                 if (Input.GetMouseButton(0) && dragging)
@@ -236,6 +251,11 @@ public class ParticleSimulatorJobs : MonoBehaviour
                 }
 
                 NativeArray<float3> springCorrected = new NativeArray<float3>(numParticles, Allocator.TempJob);
+
+                // B) Rebuild grid with new positions
+                neighborGrid.Clear();
+                for (int i = 0; i < numParticles; i++)
+                    neighborGrid.Insert(positions[i], i);
 
                 for (int step = 0; step < substeps; step++)
                 {
@@ -257,9 +277,61 @@ public class ParticleSimulatorJobs : MonoBehaviour
                     JobHandle h1 = pj.Schedule(numParticles, 64);
                     h1.Complete(); // we need positions[] updated before building the grid
 
+                    neighborGrid.Clear();
+                    for (int i = 0; i < numParticles; i++)
+                        neighborGrid.Insert(positions[i], i);
+
+                    // rebuild spring list
+                    List<InternalSpring> springList = new List<InternalSpring>();
+                    var nbrs = new NativeList<int>(Allocator.Temp);
+                    for (int i = 0; i < numParticles; i++)
+                    {
+                        nbrs.Clear();
+                        neighborGrid.GetNeighbors(positions[i], ref nbrs);
+                        foreach (int j in nbrs)
+                        {
+                            float r = math.distance(positions[i], positions[j]);
+                            if(r < influenceRadius)
+                            springList.Add(new InternalSpring
+                            {
+                                particleA = i,
+                                particleB = j,
+                                restLength = r
+                            });
+                        }
+        
+                    }
+                    nbrs.Dispose();
+
+                    // plasticity & prune
+                    for (int s = 0; s < springList.Count; s++)
+                    {
+                        var sp = springList[s];
+                        float r = math.distance(positions[sp.particleA], positions[sp.particleB]);
+                        float tol = yieldRatio * sp.restLength;
+                        if (r > sp.restLength + tol)
+                            sp.restLength += plasticity * (r - sp.restLength - tol) * subDeltaTime;
+                        else if (r < sp.restLength - tol)
+                            sp.restLength -= plasticity * (sp.restLength - tol - r) * subDeltaTime;
+
+                        if (sp.restLength > influenceRadius)
+                        {
+                            springList.RemoveAt(s--);
+                            continue;
+                        }
+
+                        springList[s] = sp;
+                    }
+
+                    // copy back into your NativeArray
+                    internalSprings.Dispose();
+                    internalSprings = new NativeArray<InternalSpring>(springList.Count, Allocator.TempJob);
+                    for (int i = 0; i < springList.Count; i++)
+                        internalSprings[i] = springList[i];
+
                     // E) Spring corrections 
                     // 1. copy current positions into the scratch buffer
-                    
+
                     springCorrected.CopyFrom(positions);
 
                     var springJob = new SpringJob()
@@ -267,6 +339,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
                         dt = subDeltaTime,
                         h = influenceRadius,
                         k_spring = springStiffness,
+                        dampForce = dampingCoeff,
                         springs = internalSprings,
                         positionsIn = positions,
                         positionsOut = springCorrected
@@ -275,9 +348,31 @@ public class ParticleSimulatorJobs : MonoBehaviour
                     h4.Complete();
 
                     positions.CopyFrom(springCorrected);
-                    
 
-                    // B) Rebuild grid with new positions
+                    neighborGrid.Clear();
+                    for (int i = 0; i < numParticles; i++)
+                        neighborGrid.Insert(positions[i], i);
+
+                    // … after spring corrections …
+                    springCorrected.CopyFrom(positions);
+
+                    var stJob = new SurfaceTensionJob
+                    {
+                        h = influenceRadius,
+                        sigma = surfaceTensionCoeff,
+                        dt = subDeltaTime,
+                        positions = positions,
+                        map = neighborMap,
+                        colorField = colorField,
+                        normals = normals,
+                        outPos = springCorrected
+                    };
+                    JobHandle stj = stJob.Schedule(numParticles, 64, h4);
+                    stj.Complete();
+
+                    // copy back
+                    positions.CopyFrom(springCorrected);
+
                     neighborGrid.Clear();
                     for (int i = 0; i < numParticles; i++)
                         neighborGrid.Insert(positions[i], i);
@@ -295,7 +390,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
                         k_p2 = k_p2,
                         map = neighborMap
                     };
-                    JobHandle h2 = dj.Schedule(numParticles, 64, h4);
+                    JobHandle h2 = dj.Schedule(numParticles, 64, stj);
                     h2.Complete();
 
                     // 4) *pressure solve iterations*
@@ -338,7 +433,7 @@ public class ParticleSimulatorJobs : MonoBehaviour
                     {
                         dt = subDeltaTime,
                         positions = newPositions,
-                        prevPos = prevPositions,
+                        prevPositions = prevPositions,
                         velocities = velocities
                     };
                     JobHandle h5 = vu.Schedule(numParticles, 64, h2);
@@ -414,6 +509,9 @@ public class ParticleSimulatorJobs : MonoBehaviour
         nearPressures.Dispose();
         dragRelativePositions.Dispose();
         internalSprings.Dispose();
+        springDisp.Dispose();
+        normals.Dispose();
+        colorField.Dispose();
     }
 
 }
@@ -558,7 +656,7 @@ struct DisplacementJob : IJobParallelFor
                             float w1 = w0 * w0;
                             float P = pressures[i] + pressures[j];
                             float NP = nearPressures[i] + nearPressures[j];
-                            float coeff = (dt*dt) * (P * w0 + NP * w1);
+                            float coeff = -(dt*dt) * (P * w0 + NP * w1);
                             float3 dir = (pj - pi) / r;
                             disp += coeff * dir;
                         } while (map.TryGetNextValue(out j, ref iter));
@@ -574,12 +672,12 @@ struct DisplacementJob : IJobParallelFor
 struct VelocityUpdateJob : IJobParallelFor
 {
     public float dt;
-    [ReadOnly] public NativeArray<float3> positions, prevPos;
+    [ReadOnly] public NativeArray<float3> positions, prevPositions;
     public NativeArray<float3> velocities;
 
     public void Execute(int i)
     {
-        velocities[i] = (positions[i] - prevPos[i]) / dt;
+        velocities[i] = (positions[i] - prevPositions[i]) / dt;
     }
 }
 
@@ -589,6 +687,7 @@ struct SpringJob : IJob
     public float dt;
     public float k_spring;
     public float h;                    // influence radius
+    public float dampForce;
     public NativeArray<InternalSpring> springs;
     public NativeArray<float3> positionsIn;
     public NativeArray<float3> positionsOut;
@@ -606,15 +705,90 @@ struct SpringJob : IJob
             if (r <= 1e-6f || r > h) continue;
             dir /= r;
 
-            // Hooke force + damper
+            // Hooke force 
             float Fs = k_spring * (s.restLength - r);
+            float Fd = k_spring * dampForce;
 
-            float3 dp = dt * dt * (1f - s.restLength / h) * Fs * dir;
+
+            float3 dp = dt * dt * (1f - s.restLength / h) * ((Fs * dir) - (Fd * -1f * dir));
 
             positionsOut[s.particleA] -= dp * 0.5f;
             positionsOut[s.particleB] += dp * 0.5f;
         }
         
+    }
+}
+
+[BurstCompile]
+struct SurfaceTensionJob : IJobParallelFor
+{
+    public float h;          // influence radius
+    public float sigma;      // surface‑tension coefficient
+    public float dt;         // timestep
+    [ReadOnly] public NativeArray<float3> positions;
+    [ReadOnly] public NativeParallelMultiHashMap<int, int> map;
+
+    public NativeArray<float> colorField;   // C_i
+    public NativeArray<float3> normals;      // ∇C_i
+    public NativeArray<float3> outPos;       // scratch positionsOut
+
+    static int HashCell(int x, int y, int z)
+    {
+        unchecked
+        {
+            int h1 = x * 73856093; h1 ^= y * 19349663; h1 ^= z * 83492791; return h1;
+        }
+    }
+
+    public void Execute(int i)
+    {
+        float3 pi = positions[i];
+        int cx = (int)math.floor(pi.x / h),
+            cy = (int)math.floor(pi.y / h),
+            cz = (int)math.floor(pi.z / h);
+
+        // SPH sums for color field C and its gradient ∇C
+        float Ci = 0f;
+        float3 grad = float3.zero;
+
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dz = -1; dz <= 1; dz++)
+                {
+                    int key = HashCell(cx + dx, cy + dy, cz + dz);
+                    if (!map.TryGetFirstValue(key, out int j, out var it)) continue;
+                    do
+                    {
+                        if (j == i) continue;
+                        float3 pj = positions[j];
+                        float r = math.distance(pi, pj);
+                        if (r >= h) continue;
+                        float q = r / h;
+
+                        // use smoothing kernel W(q) = (1–q)^3
+                        float w = (1 - q) * (1 - q) * (1 - q);
+                        Ci += w;
+                        // gradient of W : ∇W = –3*(1–q)^2 * (1/h) * (pj–pi)/r
+                        float dw = -3f * (1 - q) * (1 - q) / (h * r);
+                        grad += dw * (pj-pi);
+                    } while(map.TryGetNextValue(out j, ref it));
+                }
+
+        colorField[i] = Ci + 1f;      // +1 to include “self”
+        normals[i] = grad;         // ∇C
+
+        // if we’re “pulling” positions directly (PBD), we can
+        // turn F = –σ * κ * (∇C/|∇C|) into a position correction:
+        float Nlen = math.length(grad);
+        if (Nlen > 1e-5f)
+        {
+            // approximate curvature κ ≈ – ∇²C / |∇C| :
+            // we can re‑use Ci – 1 as rough ∇²C since ∇²C≈∑W
+            float lap = Ci;
+            float3 force = sigma * lap * (grad / Nlen);
+            // impulses ~ F * dt²
+            outPos[i] += force * dt * dt;
+        }
     }
 }
 

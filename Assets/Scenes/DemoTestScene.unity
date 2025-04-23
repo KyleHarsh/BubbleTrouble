@@ -210,9 +210,11 @@ MonoBehaviour:
   pressureIterations: 5
   gravityForce: 9.8
   particleMass: 1
-  springStiffness: 0.6
+  springStiffness: 0.8
+  plasticity: 0.4
+  yieldRatio: 0.2
   springUpdateThreshold: 0.1
-  surfaceTensionCoeff: 0.5
+  surfaceTensionCoeff: 1
   particleMesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
   particleMaterial: {fileID: 2100000, guid: 0bfc57d85b5db67488db26fdbca25c7e, type: 2}
   particleRenderRadius: 0.1
@@ -1952,7 +1954,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &2019785069
 MonoBehaviour:
   m_ObjectHideFlags: 0

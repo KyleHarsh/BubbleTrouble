@@ -6,6 +6,7 @@ using UnityEngine;
 public class InternalParticle
 {
     public float influenceRadius = 1.0f;
+    public Vector3 normal;
     public Vector3 position;
     public Vector3 previousPosition;
     public Vector3 velocity;
