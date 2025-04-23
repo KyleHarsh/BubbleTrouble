@@ -210,16 +210,18 @@ MonoBehaviour:
   pressureIterations: 5
   gravityForce: 9.8
   particleMass: 1
-  springStiffness: 0.8
-  plasticity: 0.4
+  springStiffness: 2
+  plasticity: 0.5
   yieldRatio: 0.2
+  dampingCoeff: 0.2
   springUpdateThreshold: 0.1
   surfaceTensionCoeff: 1
   particleMesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
   particleMaterial: {fileID: 2100000, guid: 0bfc57d85b5db67488db26fdbca25c7e, type: 2}
   particleRenderRadius: 0.1
-  mouseDragRadius: 4
-  mouseDragStrength: 100
+  renderParticles: 0
+  mouseDragRadius: 1
+  mouseDragStrength: 10
   dragging: 0
   dragMomentumDuration: 1
   dragTimer: 0
@@ -1785,7 +1787,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   spawnCenter: {fileID: 1875805671}
   typeToSpawn: 1
-  numParticlesToSpawn: 500
+  numParticlesToSpawn: 1500
   minParticleDensity: 0.5
   bubbleRadius: 1
 --- !u!4 &1875805671
